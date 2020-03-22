@@ -2,3 +2,13 @@
 .Rhistory
 .RData
 .Ruserdata
+
+cache
+figure*
+
+*.html
+
+*.bbl
+*.gz
+*.log
+*.tex
