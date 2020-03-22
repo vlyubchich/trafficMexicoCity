@@ -1,0 +1,681 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsfonts,amsmath,amssymb}
+\usepackage[toc,page]{appendix}
+\usepackage[yyyymmdd]{datetime}
+\renewcommand{\dateseparator}{-}
+\usepackage[margin=1in]{geometry}
+% \usepackage{gensymb} %to use extra symbols, such as {\degree}
+\usepackage{graphicx}
+\usepackage[colorlinks,citecolor=blue,linkcolor=blue]{hyperref}
+\usepackage{lscape}
+\usepackage{multicol}
+\usepackage[]{natbib}
+\usepackage{parskip}
+\usepackage[section]{placeins} %to use the command \FloatBarrier
+
+\title{Analysis of car accidents in Mexico City}
+
+\date{\today}
+
+\begin{document}
+\maketitle
+
+
+\section{Intro}
+
+%Try not to edit this chunk:
+<<setup0, echo = FALSE>>=
+options(digits = 3)
+options(width = 110) #width of text output from R
+opts_chunk$set(size = 'scriptsize', echo = T, eval = T,
+               fig.width = 12, fig.height = 5,
+               out.width = '\\textwidth', fig.show = "hold",
+               fig.align = "center", message = FALSE, warning = FALSE)
+@
+
+
+<<>>=
+rm(list = ls())
+#Load packages
+library(dplyr) #v. 0.8.5
+library(htmlwidgets) #v. 1.5.1
+library(mgcv) #v. 1.8-28
+library(plotmo) #v. 3.5.6
+library(randomForest) #v. 4.6-14
+library(ranger) #v. 0.12.1
+library(RColorBrewer) #v. 1.1-2
+# devtools::install_github("hrbrmstr/streamgraph")
+library(streamgraph) #v. 0.9.0
+library(xtable) #v. 1.8-4
+@
+
+Some colors to start with
+<<>>=
+COL <- c("black",
+         rgb(100, 38, 33, maxColorValue = 100), #red
+         rgb(0, 65, 55, maxColorValue = 100), #green
+         rgb(28, 24, 61, maxColorValue = 100), #blue
+         rgb(76, 32, 72, maxColorValue = 100), #purple
+         rgb(21, 75, 87, maxColorValue = 100), #cyan
+         rgb(0, 47, 59, maxColorValue = 100) #dark cyan
+)
+@
+
+
+\section{Data description}
+
+<<>>=
+#load data
+load("./dataderived/image_preprocessBoth.RData")
+
+#load accidents data again to see the types of accidents
+DA <- read.csv("./dataraw/accidents.csv", nrows = 155466)
+names(DA)[c(2, 3, 7, 11)] <- c("Month", "Year", "Day", "Type")
+#Truncate to the period of analysis (whole years here):
+DA <- DA[(DA$Year >= 2001) & (DA$Year <= 2015),]
+#DA <- DA[!(DA$Year == 2015 & DA$Month == 12),] #if need to remove Dec 2015
+@
+
+
+\subsection*{Number of accidents by year and type}
+
+The codes for the types of accidents:
+\begin{enumerate}
+\item Collision with other vehicle
+\item Collision with pedestrian
+\item Collision with animal
+\item Collision with fixed object
+\item Flip
+\item Passenger fall off
+\item Drive to ditch
+\item Fire
+\item Collision with train
+\item Collision with motorcycle
+\item Collision with bicycle
+\item Other
+\end{enumerate}
+
+
+Count accidents by year and type
+<<>>=
+DA$Count <- 1L
+da <- aggregate(DA$Count, by = list(DA$Year, DA$Type), FUN = sum)
+names(da) <- c("Year", "Type", "Count")
+@
+
+Number of different types of accidents
+<<>>=
+length(unique(da$Type))
+@
+
+\textbf{Figure~2:} Number of car accidents per year in Mexico City
+<<>>=
+tmp <- brewer.pal(11, name = "Spectral")
+#Add 1 more color to this palette of 11 colors and rearrange for a better look
+tmp[5] <- "black"
+tmp[7] <- tmp[1]
+COL2 <- c(tmp[-1], COL[c(2, 5)])
+pp = streamgraph(da, "Type", "Count", "Year",
+                 offset = "zero", order = "asis",
+                 interactive = TRUE) %>%
+    sg_axis_x(1, "Year", "%Y") %>%
+    sg_fill_manual(COL2) # sg_fill_brewer("Spectral")
+#Save the widget then print in PDF and edit for the paper
+saveWidget(pp, file = "AccidTypes.html")
+@
+
+
+Percentage by type
+<<>>=
+typeA <- table(DA$Type)
+round(typeA *100 / sum(typeA), 1)
+@
+
+
+Number by year
+<<>>=
+tmp = table(DA$Year)
+tmp
+@
+
+Average (percentage) increase by year
+<<>>=
+mean(diff(tmp)) #average increase
+MeanRelChange = (tmp[length(tmp)] / tmp[1]) ^ (1 / (length(tmp) - 1) )
+MeanRelChange*100 - 100 #average percentage increase
+#check should be close to 0:
+tmp[1] * MeanRelChange^((length(tmp) - 1)) - tmp[length(tmp)]
+@
+
+
+Collisions with motorcycles
+<<>>=
+tmp = da$Count[da$Type == 10] #select by type
+tmp = tmp[c(1, length(tmp))] #select 1st and last years
+tmp
+tmp[2]/tmp[1] #increase times
+@
+
+
+Collisions with pedestrians
+<<>>=
+tmp = da$Count[da$Type == 2] #select by type
+tmp = tmp[c(1, length(tmp))] #select 1st and last years
+tmp
+tmp[1]/tmp[2] #decrease times
+@
+
+
+
+\subsection*{Number of cars registered}
+
+
+\textbf{Figure~3:} Number of cars registered in Mexico City, 2001--2015
+<<>>=
+CR <- CR[CR$Year >= 2001 & CR$Year <= 2015, ]
+for(i in 1:2){
+    if(i == 1) pdf("./figures/tsCarsReg.pdf", width = 8, height = 3.7)
+    par(mar = c(3.5, 3.5, 0.5, 0.1), mgp = c(2.5, 1, 0))
+    plot(CR$Year, CR$CarsReg/1000000,
+         xlab = "Year", ylab = "Number of cars, million",
+         ylim = c(0, 5), yaxs="i",
+         type = "o", pch = 16, cex = 1.5,
+         panel.first = grid(nx = 0, ny = 5, lty = 1),
+         col = COL[1], lty = 1, las = 1, lwd = 2)
+    if(i == 1) dev.off()
+}
+@
+
+Average (percentage) increase by year
+<<>>=
+tmp = CR$CarsReg/1000000 #cars registered, million
+tmp[c(1, length(tmp))] #select 1st and last years
+mean(diff(tmp)) #average increase
+MeanRelChange = (tmp[length(tmp)] / tmp[1]) ^ (1 / (length(tmp) - 1) )
+MeanRelChange*100 - 100 #average percentage increase
+#check should be close to 0:
+tmp[1] * MeanRelChange^((length(tmp) - 1)) - tmp[length(tmp)]
+@
+
+Percent missing values
+<<>>=
+tmp = apply(is.na(DataHour), 2, mean)
+max(tmp * 100)
+@
+
+
+\subsection*{Weather}
+\textbf{Figure~4:} Time series plots of daily accident rate, total rainfall, and
+average air temperature
+
+<<>>=
+D <- DataDay
+for(i in 1:2){
+    if(i == 1) pdf("./figures/tsNaccid.pdf", width = 8, height = 3.7)
+    par(mar = c(3.5, 3.5, 0.1, 0.1), mgp = c(2.5, 1, 0))
+    plot(D$Date, D$NAccidPer100000,
+         xlab = "Date",
+         ylab = "Number of accidents per 100,000 cars",
+         col = COL[2], type = "l", lty = 1, las = 1)
+    if(i == 1) dev.off()
+}
+@
+
+
+<<>>=
+for(i in 1:2){
+    if(i == 1) pdf("./figures/tsRain.pdf", width = 8, height = 3.7)
+    par(mar = c(3.5, 3.5, 0.1, 0.1), mgp = c(2.5, 1, 0))
+    plot(D$Date, D$Rain,
+         xlab = "Date",
+         ylab = "Rainfall per day (mm)",
+         col = COL[4], type = "l", lty = 1, las = 1)
+    if(i == 1) dev.off()
+}
+@
+
+
+<<>>=
+for(i in 1:2){
+    if(i == 1) pdf("./figures/tsTemp.pdf", width = 8, height = 3.7)
+    par(mar = c(3.5, 3.5, 0.1, 0.1), mgp = c(2.5, 1, 0))
+    plot(D$Date, D$Temperature,
+         xlab = "Date",
+         ylab = expression(paste("Average temperature per day (",degree,"C)")),
+         col = COL[5], type = "l", lty = 1, las = 1)
+    if(i == 1) dev.off()
+}
+@
+
+\subsection*{Weather -- for conclusions}
+
+Weather by hour
+<<>>=
+tmp <- tapply(DataHour$Temperature, DataHour$Hour, mean, na.rm = TRUE)
+plot(tmp, x = 0:23, type = "o", panel.first = grid(lty = 1),
+     ylab = "Average temperature per hour",
+     las = 1)
+#add lines for 'busiest' hours
+abline(v = c(14.5, 16.5), col = 2, lty = 2)
+tmp <- tapply(DataHour$Rain, DataHour$Hour, mean, na.rm = TRUE)
+plot(tmp, x = 0:23, type = "o", panel.first = grid(lty = 1),
+     ylab = "Average rainfall per hour",
+     las = 1)
+#most rainy hours
+abline(v = c(18, 21), col = 2, lty = 2)
+@
+
+Rainy months (apply it to full years only, i.e., before 2015)
+<<>>=
+tapply(DataDay$Rain[DataDay$Year < 2015], DataDay$Month[DataDay$Year < 2015], mean) *
+    length(unique(DataDay$Year[DataDay$Year < 2015]))
+@
+
+
+\section{Methods}
+
+
+\section{Results}
+
+
+\textbf{Table 1:} Quartile summaries (daily data)
+
+The quartiles table with std dev. for the mean (divide by $\sqrt{n}$)
+
+
+<<>>=
+D <- DataDay
+labs = seq(0.25, 1, by = 0.25)
+#temperature quartiles
+tq = quantile(D$Temperature, probs = c(0, 0.25, 0.50, 0.75, 1))
+tq
+D$tempInt = cut(D$Temperature, breaks = tq, labels = paste("temp_", labs, sep = ""),
+                include.lowest = TRUE, right = FALSE, ordered_result = TRUE)
+#rain quartiles (FOR RAINY DAYS!)
+rq = quantile(D$Rain[D$Rain > 0], probs = c(0, 0.25, 0.50, 0.75, 1))
+rq[1] = 0
+rq
+D$rainInt = cut(D$Rain, breaks = rq, labels = paste("rain_", labs, sep = ""),
+                include.lowest = TRUE, right = FALSE, ordered_result = TRUE)
+#Summary per intersection of the quartiles:
+magg1 <- tapply(D$NAccidPer100000, list(D$tempInt, D$rainInt), mean)
+magg1 <- format(round(magg1, 2), digits = 2)
+#Sample size per intersection of the quartiles:
+ss <- table(D$tempInt, D$rainInt)
+sdagg1 <- tapply(D$NAccidPer100000, list(D$tempInt, D$rainInt), sd)
+sdagg1 <- sdagg1 / sqrt(ss)
+sdagg1 <- format(round(sdagg1, 2), digits = 2)
+M <- matrix(paste(magg1, " (", sdagg1, ")", sep = ""), nrow = 4)
+dimnames(M) <- dimnames(magg1)
+#Copy this from R console into latex:
+print(xtable(M,
+             caption = "Average accident rate, st.dev. in the parentheses",
+             label = "tab:TempRain", size = "small"))
+@
+
+
+
+\subsection{GAM}
+
+\subsection*{Daily GAM}
+<<>>=
+D <- DataDay
+D$Month <- factor(D$Month)
+# Create train+test data
+DtrainDay <- D[D$Year <= 2012,]
+DtestDay <- D[D$Year > 2012,]
+# summary(DtrainDay)
+# summary(DtestDay)
+@
+
+
+Size of the training and testing data
+<<>>=
+nrow(DtrainDay)
+nrow(DtestDay)
+@
+
+
+
+<<>>=
+K <- 5
+set.seed(140)
+gamfit <- gamDay <- mgcv::gam(NAccidPer100000 ~ s(Year, k = K)
+                              + Month
+                              + Weekday
+                              + HNSSaturday + Holiday
+                              + te(Rain, Temperature, k = K)
+                              , select = TRUE
+                              , bs = "cr"
+                              , method = "REML"
+                              , data = DtrainDay)
+@
+
+
+<<>>=
+anova(gamfit)
+summary(gamfit)
+concurvity(gamfit)
+# gam.check(gamfit) #commented out because plots are slow to render in PDF
+# plot(gamfit)
+# acf(residuals(gamfit, type = "pearson"), las = 1) #significant but low
+@
+
+
+\subsection*{Hourly GAM}
+<<>>=
+D <- DataHour
+D$Temperature.l1 <- dplyr::lag(D$Temperature, 1)
+D$Rain.l1 <- dplyr::lag(D$Rain, 1)
+D$Month <- factor(D$Month)
+# Create train+test data
+DtrainHour <- D[D$Year <= 2012,]
+DtestHour <- D[D$Year > 2012,]
+# summary(DtrainHour)
+# summary(DtestHour)
+@
+
+
+Size of the training and testing data
+<<>>=
+nrow(DtrainHour)
+nrow(DtestHour)
+@
+
+
+<<cache=TRUE>>=
+K <- 5
+set.seed(140000)
+gamfit <- gamHour <- mgcv::gam(NAccidPer100000 ~ s(Year, k = K)
+                               + Month + Weekday
+                               + HNSSaturday + Holiday
+                               + s(Hour, k = K)
+                               + te(Rain, Temperature, k = K)
+                               + te(Rain.l1, Temperature.l1, k = K)
+                               , select = TRUE
+                               , bs = "cr"
+                               , method = "REML"
+                               , data = DtrainHour)
+@
+
+
+<<>>=
+anova(gamfit)
+summary(gamfit)
+concurvity(gamfit)
+# gam.check(gamfit) #commented out because plots are slow to render in PDF
+# plot(gamfit)
+# acf(residuals(gamfit, type = "pearson"), las = 1) #significant but low
+@
+
+
+\textbf{Figure~5:} Contour plots of the tensor smooth terms
+<<>>=
+for(i in 1:2){
+    if(i == 1) pdf("./figures/teTempRain.pdf", width = 8, height = 3.7)
+    par(mar = c(3.3, 3, 1.1, 0.1), mgp = c(2.0, 0.8, 0))
+    par(mfrow = c(1, 2))
+    plot(gamHour, select = 3, se = FALSE, rug = FALSE, las = 1, ylim = c(0, 32), main = "a) Hourly data",
+         xlab = "Rainfall (mm)", ylab = "")
+    mtext(expression(paste("Temperature (",degree,"C)")), side = 2, line = 1.8)
+    plot(gamDay,  select = 2, se = FALSE, rug = FALSE, las = 1, ylim = c(0, 32), main = "b) Daily data",
+         xlab = "Rainfall (mm)",
+         yaxt = "n", ylab = "")
+    axis(2, labels = NA)
+    if(i == 1) dev.off()
+}
+@
+
+
+
+\subsection{Random forest}
+
+\subsection*{Daily RF}
+
+<<>>=
+RESPONSE <- "NAccidPer100000"
+#predictors
+v <- c("HNSSaturday", "Holiday", "Month", "Year", "Rain",  "Temperature", "Weekday")
+@
+
+
+<<cache=TRUE>>=
+DATAnoNA <- na.omit(DtrainDay[,c(RESPONSE, v)])
+set.seed(10000)
+ran <- RFDay <- ranger(dependent.variable.name = RESPONSE, data = DATAnoNA,
+                       importance = 'impurity_corrected',
+                       min.node.size = 5, respect.unordered.factors = 'partition',
+                       num.trees = 500)
+#for predictions
+ran2 <- ran2Day <- ranger(dependent.variable.name = RESPONSE, data = DATAnoNA,
+                          # importance = 'impurity_corrected',
+                          min.node.size = 5, respect.unordered.factors = 'partition',
+                          num.trees = 500)
+print(ran)
+# ranimp <- importance_pvalues(ran, method = "altmann",
+#                              num.permutations = 500,
+#                              formula = as.formula(paste(RESPONSE, ".", sep = " ~ ")),
+#                              data = DATAnoNA)
+# ranimp <- ranimp[order(ranimp[,1]),]
+# ranimp
+@
+
+
+<<cache=TRUE>>=
+set.seed(300000)
+rf2 <- rf2Day <- randomForest(y = DATAnoNA[,RESPONSE],
+                              x = DATAnoNA[, v],
+                              nodesize = ran$min.node.size,
+                              mtry = ran$mtry,
+                              ntree = ran$num.trees)
+print(rf2)
+plot(rf2)
+@
+
+
+<<cache=TRUE>>=
+RF <- rf2
+preds <- sort(rownames(rf2$importance)) # sort(v)
+par(mfrow = c(ceiling(length(preds)/3), 3))
+par(bty = "L", mar = c(5, 4, 1, 1) + 0.1, mgp = c(2, 0.7, 0))
+for(i in 1:length(preds)) {
+    partialPlot(RF, pred.data = DtrainDay, x.var = preds[i],
+                las = 1, xlab = preds[i], ylab = "", main = "", xpd = F)
+    mtext("NAccidPer100000", side = 2, line = 3, cex = 0.7)
+    mtext(paste("(", letters[i], ")", sep = ""), side = 3, line = 0.1, cex = 0.8, adj = -0.37)
+}
+@
+
+
+
+
+\subsection*{Hourly RF}
+<<>>=
+RESPONSE <- "NAccidPer100000"
+#predictors
+v <- c("HNSSaturday", "Holiday", "Hour", "Month", "Year", "Rain",  "Temperature",
+       "Rain.l1",  "Temperature.l1", "Weekday")
+@
+
+<<cache=TRUE>>=
+DATAnoNA <- na.omit(DtrainHour[,c(RESPONSE, v)])
+set.seed(10000)
+ran <- RFHour <- ranger(dependent.variable.name = RESPONSE, data = DATAnoNA,
+                        importance = 'impurity_corrected',
+                        min.node.size = 5, respect.unordered.factors = 'partition',
+                        num.trees = 100)
+#for predictions
+ran2 <- ran2Hour <- ranger(dependent.variable.name = RESPONSE, data = DATAnoNA,
+                           # importance = 'impurity_corrected',
+                           min.node.size = 5, respect.unordered.factors = 'partition',
+                           num.trees = 100)
+print(ran)
+# ranimp <- importance_pvalues(ran, method = "altmann",
+#                              num.permutations = 500,
+#                              formula = as.formula(paste(RESPONSE, ".", sep = " ~ ")),
+#                              data = DATAnoNA)
+# ranimp <- ranimp[order(ranimp[,1]),]
+# ranimp
+@
+
+<<cache=TRUE>>=
+set.seed(300000)
+rf2 <- rf2Hour <- randomForest(y = DATAnoNA[,RESPONSE],
+                               x = DATAnoNA[, v],
+                               nodesize = ran$min.node.size,
+                               mtry = ran$mtry,
+                               ntree = ran$num.trees)
+print(rf2)
+plot(rf2)
+@
+
+
+\textbf{Figure~6:} Relative importance of the variables in random forests
+<<>>=
+for(i in 1:2){
+    if(i == 1) pdf("./figures/RFimp.pdf", width = 8, height = 3.7)
+    par(mar = c(3.3, 5.5, 1.1, 1), mgp = c(2.0, -0.3, 0))
+    par(mfrow = c(1, 2))
+    #
+    tmp <- sort(RFHour$variable.importance)
+    names(tmp)[grep("HNS", names(tmp))] <- "HNCS"
+    names(tmp)[grep("ture.", names(tmp))] <- "Temperature(t-1)"
+    names(tmp)[grep("ain.", names(tmp))] <- "Rainfall(t-1)"
+    names(tmp)[names(tmp) == "Rain"] <- "Rainfall"
+    barplot(tmp,
+            beside = TRUE, las = 1, xlim = c(-2, 10),
+            main = "a) Hourly data",
+            xlab = "Importance",
+            col = COL[4], border = NA, cex.names = 0.8, xaxt = "n",
+            horiz = TRUE)
+    par(mgp = c(2.0, 0.8, 0))
+    axis(1)
+    #
+    tmp <- sort(RFDay$variable.importance)
+    names(tmp)[grep("HNS", names(tmp))] <- "HNCS"
+    names(tmp)[names(tmp) == "Rain"] <- "Rainfall"
+    barplot(tmp,
+            beside = TRUE, las = 1, xlim = c(0, 100),
+            main = "b) Daily data",
+            xlab = "Importance",
+            col = COL[4], border = NA, cex.names = 0.8,
+            horiz = TRUE)
+    if(i == 1) dev.off()
+}
+@
+
+
+\textbf{Figure~7:} Partial dependence interaction plots from the random forests
+<<>>=
+pdf("./figures/RFinter.pdf", width = 5, height = 4.7)
+par(mfrow = c(1, 2))
+par(mar = c(3.3, 3, 1.1, 0.1), mgp = c(2.0, 0.8, 0))
+v <- c("HNSSaturday", "Holiday", "Hour", "Month", "Year", "Rain",  "Temperature",
+       "Rain.l1",  "Temperature.l1", "Weekday")
+DATAnoNA <- na.omit(DtrainHour[,c(RESPONSE, v)])
+RF <- rf2Hour
+plotmo(RF, pmethod = "partdep", ylim = c(0, 32),
+       all1 = FALSE,
+       degree1 = FALSE,
+       degree2 = c("Rain", "Temperature"),
+       type2 = "contour",
+       caption = "", main = "a) Hourly data",
+       all2 = TRUE)
+v <- c("HNSSaturday", "Holiday", "Month", "Year", "Rain",  "Temperature", "Weekday")
+DATAnoNA <- na.omit(DtrainDay[,c(RESPONSE, v)])
+RF <- rf2Day
+plotmo(RF, pmethod = "partdep", ylim = c(0, 32),
+       all1 = FALSE,
+       degree1 = FALSE,
+       degree2 = c("Rain", "Temperature"),
+       type2 = "contour",
+       caption = "", main = "b) Daily data",
+       all2 = TRUE)
+dev.off()
+@
+
+
+
+\subsection{Performance evaluation}
+
+Number of accidents per year in the training set
+<<>>=
+sum(DtrainDay$NAccidPer100000) / length(unique(DtrainDay$Year))
+@
+
+
+\subsection*{Test daily}
+
+<<>>=
+Dtest <- DtestDay
+gamfit <- gamDay
+ran2 <- ran2Day
+@
+
+<<>>=
+pred_gam <- predict(gamfit, Dtest)
+pred_ran <- predict(ran2, Dtest)$predictions
+#PMAE
+mean(abs(Dtest[,RESPONSE] - pred_gam))
+mean(abs(Dtest[,RESPONSE] - pred_ran))
+#PRMSE
+sqrt(mean((Dtest[,RESPONSE] - pred_gam)^2))
+sqrt(mean((Dtest[,RESPONSE] - pred_ran)^2))
+#PMAPE
+100*mean(abs((Dtest[,RESPONSE] - pred_gam)/Dtest[,RESPONSE]))
+100*mean(abs((Dtest[,RESPONSE] - pred_ran)/Dtest[,RESPONSE]))
+@
+
+<<>>=
+tapply(Dtest[,RESPONSE], Dtest$Year, sum)
+tapply(pred_gam, Dtest$Year, sum)
+tapply(pred_ran, Dtest$Year, sum)
+@
+
+\subsection*{Test hourly}
+
+<<>>=
+Dtest <- DtestHour
+gamfit <- gamHour
+ran2 <- ran2Hour
+@
+
+<<>>=
+pred_gam <- predict(gamfit, Dtest)
+pred_ran <- predict(ran2, Dtest)$predictions
+#PMAE
+mean(abs(Dtest[,RESPONSE] - pred_gam))
+mean(abs(Dtest[,RESPONSE] - pred_ran))
+#PRMSE
+sqrt(mean((Dtest[,RESPONSE] - pred_gam)^2))
+sqrt(mean((Dtest[,RESPONSE] - pred_ran)^2))
+#PMAPE
+100*mean(abs((Dtest[,RESPONSE] - pred_gam)/Dtest[,RESPONSE]))
+100*mean(abs((Dtest[,RESPONSE] - pred_ran)/Dtest[,RESPONSE]))
+@
+
+<<>>=
+tapply(Dtest[,RESPONSE], Dtest$Year, sum)
+tapply(pred_gam, Dtest$Year, sum)
+tapply(pred_ran, Dtest$Year, sum)
+@
+
+
+Average annual accident rate in the training period
+<<>>=
+tmp = tapply(DtrainDay[,RESPONSE], DtrainDay$Year, sum)
+tmp
+mean(tmp)
+@
+
+Save all objects from the R environment:
+<<>>=
+save.image(file = "./dataderived/image_MexAnalysis.RData")
+@
+
+
+\end{document}
+
+
+

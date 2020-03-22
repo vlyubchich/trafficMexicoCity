@@ -12,3 +12,5 @@ figure*
 *.gz
 *.log
 *.tex
+
+image*MexAnalysis*.RData
