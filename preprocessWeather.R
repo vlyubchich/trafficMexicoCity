@@ -114,4 +114,3 @@ dw$Rain <- rowMeans(dw[,grep("Rain", names(dw))], na.rm = TRUE)
 WHour <- dw[-c(5:19)] #hourly weather
 # Save file
 saveRDS(WHour, file = "./dataderived/WHour.RDS")
-
