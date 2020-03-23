@@ -49,3 +49,16 @@ Bibtex entry for the book chapter:
 }
 ```
 
+The data and code release:
+
+```javascript
+@software{lyubchich_3723688,
+  author = {Lyubchich, V and Bailey, S and Olivera-Villarroel, S M},
+  title = {{github.com/vlyubchich/trafficMexicoCity: Analysis of car accidents in Mexico City}},
+  year = 2020,
+  publisher = {Zenodo},
+  version = {v1.0},
+  doi = {10.5281/zenodo.3723688},
+  url = {https://doi.org/10.5281/zenodo.3723688}
+}
+```
