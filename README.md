@@ -3,9 +3,9 @@
 These data and code support the results presented in (recommended citation):
 
 Bailey S, Olivera-Villarroel SM, Lyubchich V (2020) 
-Impacts of inclement weather on traffic accidents in Mexico City. 
-In: Lyubchich V et al (eds) Evaluating Climate Change Impacts, CRC Press, Boca Raton, FL, 
-USA, in press.
+Impacts of inclement weather on traffic accidents in Mexico City.
+Ch 14 in V Lyubchich et al. (eds.) *Evaluating Climate Change Impacts*, pp 307--324. Boca Raton, FL: CRC Press.  
+https://doi.org/10.1201/9781351190831-14
 
 
 ## Data
@@ -35,23 +35,22 @@ the compiled output **MexAnalysis.PDF** is also provided.
 
 Bibtex entry for the book chapter:
 
-```javascript
+```
 @incollection{Bailey:etal:2020:impacts,
    author = {Bailey, S and Olivera-Villarroel, S M and Lyubchich, V},
    title = {Impacts of inclement weather on traffic accidents in {Mexico City}},
    booktitle = {Evaluating Climate Change Impacts},
    editor = {Lyubchich, V and Gel, Y R and Kilbourne, K H and Miller, T J and Newlands, N K and Smith, A B},
-   pages = {},
+   pages = {307--324},
    year = {2020},
    address = {Boca Raton, FL, USA},
-   publisher = {CRC Press},
-   note = {In press}
+   publisher = {CRC Press}
 }
 ```
 
 The data and code release:
 
-```javascript
+```
 @software{lyubchich_3723688,
   author = {Lyubchich, V and Bailey, S and Olivera-Villarroel, S M},
   title = {{github.com/vlyubchich/trafficMexicoCity: Analysis of car accidents in Mexico City}},
