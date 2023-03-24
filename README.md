@@ -4,7 +4,7 @@ These data and code support the results presented in (recommended citation):
 
 Bailey S, Olivera-Villarroel SM, Lyubchich V (2020) 
 Impacts of inclement weather on traffic accidents in Mexico City.
-Ch 14 in V Lyubchich et al. (eds.) *Evaluating Climate Change Impacts*, pp 307--324. Boca Raton, FL: CRC Press.  
+Ch 14 in V Lyubchich et al. (eds.) *Evaluating Climate Change Impacts*, p 307--324. Boca Raton, FL: CRC Press.  
 https://doi.org/10.1201/9781351190831-14
 
 
